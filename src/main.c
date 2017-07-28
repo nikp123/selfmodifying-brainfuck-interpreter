@@ -3,6 +3,11 @@
 #include <string.h>
 #include <limits.h>
 
+#ifdef __unix__
+	#include <termios.h>
+	#include <unistd.h>
+#endif
+
 #define u_char unsigned char
 #define u_long unsigned long
 
@@ -82,12 +87,9 @@ int interpret(void)
 			// simulate an overflow/underflow effect
 			case '>':
 				memptr++;
-				memptr %= mem_siz;
 				break;
 			case '<':
 				memptr--;
-				if(memptr < 0)
-					memptr = mem_siz - 1;
 				break;
 			
 			// Increments and decrements
@@ -103,44 +105,48 @@ int interpret(void)
 				putchar(mem[memptr]);
 				break;
 			case ',':
+			{
+				#ifdef __unix__
+					static struct termios oldt, newt;
+					tcgetattr( STDIN_FILENO, &oldt);
+					newt = oldt;
+					newt.c_lflag &= ~(ICANON);
+					tcsetattr( STDIN_FILENO, TCSANOW, &newt);
+				#endif
 				mem[memptr] = getchar();
+				#ifdef __unix__
+					tcsetattr( STDIN_FILENO, TCSANOW, &oldt);
+				#endif
 				break;
+			}
 			
 			// Loops
 			case '[':
-				if(mem[memptr]) break;
-				for(i; i < exec_siz; i++)
-					if(mem[i] == ']') break;
-				if(mem[i] == ']') break;
-				#ifdef DEBUG
-				fprintf(stderr, "Pontential error: Non-ending loop detected!\n");
-				#endif
-				return 1;
-			case ']':
-				for(i; i >= 0; i--)
+			{
+				int nested = 1;
+				if(mem[memptr])	break;				
+				do
 				{
-					if(mem[i] == '[')
-					{
-						i--;
-						
-						// just in case if there's a loop at the beginning
-						if(i == UINT_MAX)
-						{
-							i++;
-							goto emergency_jump;
-						}
-						break;
-					}
-				}
-				if(mem[i+1] == '[' || mem[i] == '[') break;
-				#ifdef DEBUG
-				fprintf(stderr, "Potential error: Broken loop detected!\n");
-				#endif
-				return 1;
+					i++;					
+					if(mem[i] == '[') nested++;
+					else if(mem[i] == ']') nested--;
+				} while(nested);
+				break;
+			}
+			case ']':
+			{	
+				int nested = 0;
+				do
+				{
+					if(mem[i] == '[') nested++;
+					else if(mem[i] == ']') nested--;
+					i--;
+				} while(nested);
+				break;
+			}
 			default: break;
 		}
 	}
-	printf("\n");
 	#ifdef DEBUG
 	printf("Releasing resources!\n");
 	#endif
